@@ -1,0 +1,152 @@
+---
+title: "Дашборд для анализа транзакций"
+output: 
+  flexdashboard::flex_dashboard:
+    orientation: columns
+    vertical_layout: fill
+---
+
+```{r setup, include=FALSE}
+library(flexdashboard)
+library(billboarder)
+library(dplyr)
+Sys.setlocale("LC_TIME","Russian")
+
+data_all <- read.csv("C:/Users/Sebulba/Downloads/Итоговое задание/data_all.csv", TRUE)
+hh_demographic <- read.csv("C:/Users/Sebulba/Downloads/Итоговое задание/hh_demographic.csv", TRUE)
+campaign_desc <- read.csv("C:/Users/Sebulba/Downloads/Итоговое задание/campaign_desc.csv", TRUE)
+```
+
+Column {data-width=350}
+-----------------------------------------------------------------------
+
+### График 1
+
+```{r}
+ans_1 = aggregate(data_all$TRANS_TIME, list(data_all$BASKET_ID), FUN=mean) 
+
+ans_1 = data.frame(first_column  = c("После обеда", "До обеда"), 
+                   second_column = c(sum(ans_1$x >= 1200), sum(ans_1$x < 1200))
+                   )
+
+
+billboarder() %>%
+  bb_barchart(data = ans_1[, c("first_column", "second_column")], color = "#102246") %>%
+  bb_y_grid(show = TRUE) %>%
+  bb_y_axis(label = list(text = "количество заказов", position = "outer-top")) %>% 
+  bb_legend(show = FALSE) %>% 
+  bb_labs(title = "Активность покупателей")
+```
+
+### График 2
+
+```{r}
+
+hh_demographic$HOUSEHOLD_SIZE_DESC[which(hh_demographic$HOUSEHOLD_SIZE_DESC=="5+")] <- "5"
+hh_demographic$HOUSEHOLD_SIZE_DESC <- as.numeric(hh_demographic$HOUSEHOLD_SIZE_DESC)
+
+library(DT)
+
+avg_household = data_all %>% select('household_key','QUANTITY', 'SALES_VALUE', 'RETAIL_DISC', 'COUPON_DISC') %>%
+  mutate(PRICE = select(., SALES_VALUE:COUPON_DISC) %>% rowSums(na.rm = TRUE)) %>%
+  mutate(SALES = PRICE * QUANTITY) %>% 
+  select('household_key', 'SALES') 
+
+avg_household = avg_household %>% group_by(household_key) %>% 
+  summarise(sum_sales=sum(SALES),
+            .groups = 'drop') %>%
+  as.data.frame()
+
+ans_3 = data.frame(Показатели  = c("Количество кампаний",
+                                    "Количество клиентов",
+                                    "Средняя сумма покупок на семью",
+                                    "Общее количество проданных товаров"), 
+                   Цифры = c(as.numeric(count(campaign_desc)),
+                              as.numeric(sum(hh_demographic$HOUSEHOLD_SIZE_DESC)),
+                              round(as.numeric(mean(avg_household$sum_sales))),
+                              as.numeric(sum(data_all$QUANTITY)))
+                   )
+
+write.csv(ans_3, "C:/Users/Sebulba/Downloads/Итоговое задание/kpi.csv", row.names=FALSE, fileEncoding = "UTF-8")
+
+ans_3 %>% datatable(
+              rownames = FALSE,
+              class = 'cell-border stripe',
+              extensions = c('Buttons', 'KeyTable'), 
+              options = list(dom = 't',
+                             autoWidth = FALSE,
+                             buttons = c('copy', 'excel',  'print'),
+                             keys = TRUE
+                             )
+              )
+
+```
+
+Column {data-width=650}
+-----------------------------------------------------------------------
+
+### График 3
+
+```{r}
+ans_2_1 = data_all %>% select('PRODUCT_ID','QUANTITY', 'SALES_VALUE', 'RETAIL_DISC', 'COUPON_DISC') %>%
+  mutate(PRICE = select(., SALES_VALUE:COUPON_DISC) %>% rowSums(na.rm = TRUE)) %>%
+  mutate(SALES = PRICE * QUANTITY) %>% 
+  select('PRODUCT_ID','SALES')
+
+ans_2_1 = ans_2_1 %>% group_by(PRODUCT_ID) %>% 
+  summarise(sum_sales=sum(SALES),
+            .groups = 'drop') %>%
+  as.data.frame()
+
+ans_2_1 = ans_2_1 %>% 
+          arrange(desc(sum_sales)) %>% 
+          slice(1:10) %>%
+  as.data.frame()
+
+billboarder() %>%
+  bb_barchart(
+    data = ans_2_1[, c("PRODUCT_ID", "sum_sales")]
+  ) %>%
+  bb_data(
+    names = list(sum_sales = "Продажи")
+  ) %>% 
+  bb_y_grid(show = TRUE) %>%
+  bb_y_axis(label = list(text = "Сумма продаж", position = "outer-top")) %>% 
+  bb_x_axis(label = list(text = "Идентификатор товара", position = "bottom-right")) %>%
+  bb_legend(position = "inset", inset = list(anchor = "top-right")) %>% 
+  bb_labs(title = "Самые продаваемые товары")
+```
+
+### График 4
+
+```{r}
+ans_2_2 = data_all %>% select('PRODUCT_ID', 'STORE_ID','QUANTITY', 'SALES_VALUE', 'RETAIL_DISC', 'COUPON_DISC') %>%
+  mutate(PRICE = select(., SALES_VALUE:COUPON_DISC) %>% rowSums(na.rm = TRUE)) %>%
+  mutate(SALES = PRICE * QUANTITY) %>% 
+  filter(!PRODUCT_ID %in% list(ans_2_1$PRODUCT_ID)) %>%
+  select('STORE_ID', 'SALES') 
+
+ans_2_2 = ans_2_2 %>% group_by(STORE_ID) %>% 
+  summarise(sum_sales=sum(SALES),
+            .groups = 'drop') %>%
+  as.data.frame()
+
+ans_2_2 = ans_2_2 %>% 
+  arrange(desc(sum_sales)) %>% 
+  slice(1:10) %>%
+  as.data.frame()
+
+billboarder() %>%
+  bb_barchart(
+    data = ans_2_2[, c("STORE_ID", "sum_sales")]
+  ) %>%
+  bb_data(
+    names = list(sum_sales = "Продажи")
+  ) %>% 
+  bb_y_grid(show = TRUE) %>%
+  bb_y_axis(label = list(text = "Сумма продаж", position = "outer-top")) %>% 
+  bb_x_axis(label = list(text = "Идентификатор точки продаж", position = "bottom-right")) %>%
+  bb_legend(position = "inset", inset = list(anchor = "top-right")) %>% 
+  bb_labs(title = "Магазины, которым стоит уделить внимание")
+```
+
